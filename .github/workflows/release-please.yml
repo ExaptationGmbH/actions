@@ -1,0 +1,80 @@
+name: Release Please
+
+# Monorepo release automation for the reusable actions in this repo.
+#
+# `separate-pull-requests: true` (in release-please-config.json) means each
+# component under `packages` gets its OWN release PR, changelog, and version —
+# so build-harbor-image can ship 1.4.0 while a future action sits at 0.2.0.
+#
+# Tags are component-scoped: include-component-in-tag + tag-separator "-" +
+# include-v-in-tag give immutable tags like `build-harbor-image-v0.0.1`.
+# Consumers reference an action as:
+#   uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
+# The sliding `-v0` / `-v0.0` tags are maintained by the *-major-tag job below;
+# release-please only creates the exact `-v0.0.1` tag. (Pre-1.0 the sliding
+# `-v0` tag can move across breaking changes — pin to `-v0.0` or an exact tag
+# if you need stability before this action reaches 1.0.0.)
+#
+# First release: release-please will propose 0.0.1 for a component on its first
+# run (manifest entry "0.0.0" + initial-version "0.0.1"). To force a specific
+# first version deterministically, land the bootstrapping commit with a
+# `Release-As: 0.0.1` footer.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      # In manifest mode, release-please prefixes every per-component output
+      # with "<package-path>--". Add a block like this per action.
+      harbor_released: ${{ steps.release.outputs['build-harbor-image--release_created'] }}
+      harbor_tag: ${{ steps.release.outputs['build-harbor-image--tag_name'] }}
+      harbor_major: ${{ steps.release.outputs['build-harbor-image--major'] }}
+      harbor_minor: ${{ steps.release.outputs['build-harbor-image--minor'] }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Default GITHUB_TOKEN is sufficient: this repo has no downstream
+          # workflows that need to fire off the release event. Requires the repo
+          # setting "Allow GitHub Actions to create and approve pull requests".
+          # Swap for a PAT (as the app repos do) if downstream automation is
+          # added later.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Maintain the sliding major/minor tags for build-harbor-image so consumers
+  # can pin to `@build-harbor-image-v0` and get patches without editing their
+  # workflows. Runs only when that component was actually released.
+  harbor-major-tag:
+    needs: release-please
+    if: needs.release-please.outputs.harbor_released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Move build-harbor-image-v${major} and -v${major}.${minor}
+        env:
+          MAJOR: ${{ needs.release-please.outputs.harbor_major }}
+          MINOR: ${{ needs.release-please.outputs.harbor_minor }}
+          EXACT: ${{ needs.release-please.outputs.harbor_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base="build-harbor-image-v"
+          for t in "${base}${MAJOR}" "${base}${MAJOR}.${MINOR}"; do
+            git tag -f "$t" "$EXACT"
+            git push -f origin "refs/tags/$t"
+            echo "Moved $t -> $EXACT"
+          done

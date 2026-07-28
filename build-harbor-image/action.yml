@@ -1,0 +1,192 @@
+name: Build & push Harbor image
+description: >-
+  Set up Buildx, log in to a Harbor registry, and build + push a Docker image
+  with GHA layer caching. Bundles the setup-buildx-action + login-action +
+  build-push-action pattern into one step.
+
+# Composite action — reference it from a job step, e.g.:
+#   - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
+# Callers still run actions/checkout themselves (the build context is their
+# checked-out tree) and resolve their own version string.
+
+inputs:
+  # ── Registry + auth ──────────────────────────────────────────────────────
+  registry:
+    description: Harbor registry hostname (e.g. harbor.example.com).
+    required: true
+  username:
+    description: Harbor robot/user name (pass a secret or var).
+    required: true
+  password:
+    description: Harbor password/token (pass a secret).
+    required: true
+
+  # ── What to build ────────────────────────────────────────────────────────
+  image:
+    description: >-
+      Image repository path WITHOUT the registry prefix, e.g.
+      "myproject/myimage". The registry is prepended automatically.
+    required: true
+  tags:
+    description: >-
+      Newline- or comma-separated list of tags to push. Each entry may be a bare
+      tag suffix (e.g. "1.2.3", "latest") which is expanded to
+      "<registry>/<image>:<suffix>", or a fully-qualified ref (contains a "/" or
+      already starts with the registry) which is passed through unchanged — so
+      docker/metadata-action output can be fed straight in. Takes precedence over
+      `version`/`latest` when set.
+    required: false
+    default: ""
+  version:
+    description: >-
+      Convenience: a single version tag. When `tags` is empty, the pushed tags
+      become "<version>" plus "latest" (unless `latest: false`). Strip any
+      leading "v" before passing if you don't want it in the tag.
+    required: false
+    default: ""
+  latest:
+    description: When deriving tags from `version`, also push ":latest".
+    required: false
+    default: "true"
+
+  # ── Build knobs (pass-through to build-push-action) ───────────────────────
+  context:
+    description: Build context path.
+    required: false
+    default: "."
+  file:
+    description: Path to the Dockerfile.
+    required: false
+    default: Dockerfile
+  platforms:
+    description: Target platforms, e.g. "linux/amd64" or "linux/amd64,linux/arm64".
+    required: false
+    default: linux/amd64
+  build-args:
+    description: Newline-separated build args (e.g. "VERSION=1.2.3").
+    required: false
+    default: ""
+  target:
+    description: Dockerfile build stage to target (optional).
+    required: false
+    default: ""
+  push:
+    description: Push the image after building. Set "false" to build-only (PR checks).
+    required: false
+    default: "true"
+
+  # ── Caching / multi-arch ─────────────────────────────────────────────────
+  cache-scope:
+    description: >-
+      GHA cache scope. Give each image its own scope when a repo builds several
+      images in parallel so their layer caches don't collide. Empty = default
+      shared scope.
+    required: false
+    default: ""
+  qemu:
+    description: Set up QEMU first (needed for cross-arch builds like linux/arm64).
+    required: false
+    default: "false"
+
+outputs:
+  image-ref:
+    description: The registry-qualified image path (registry/image, no tag).
+    value: ${{ steps.resolve.outputs.image-ref }}
+  tags:
+    description: The fully-resolved, newline-separated tag list that was pushed.
+    value: ${{ steps.resolve.outputs.tags }}
+  digest:
+    description: The image digest of the pushed image.
+    value: ${{ steps.build.outputs.digest }}
+  metadata:
+    description: Build result metadata JSON from build-push-action.
+    value: ${{ steps.build.outputs.metadata }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve image tags
+      id: resolve
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE: ${{ inputs.image }}
+        RAW_TAGS: ${{ inputs.tags }}
+        VERSION: ${{ inputs.version }}
+        LATEST: ${{ inputs.latest }}
+      run: |
+        set -euo pipefail
+
+        image_ref="${REGISTRY}/${IMAGE}"
+        echo "image-ref=${image_ref}" >> "$GITHUB_OUTPUT"
+
+        # Collect the list of tag entries: explicit `tags` wins; otherwise
+        # derive from `version` (+ latest).
+        entries=()
+        if [ -n "${RAW_TAGS//[[:space:]]/}" ]; then
+          # Split on newlines and commas.
+          while IFS= read -r line; do
+            line="$(echo "$line" | tr ',' '\n')"
+            while IFS= read -r t; do
+              t="$(echo "$t" | xargs)"   # trim
+              [ -n "$t" ] && entries+=("$t")
+            done <<< "$line"
+          done <<< "$RAW_TAGS"
+        elif [ -n "$VERSION" ]; then
+          entries+=("$VERSION")
+          if [ "$LATEST" = "true" ]; then
+            entries+=("latest")
+          fi
+        else
+          echo "::error::Provide either `tags` or `version`."
+          exit 1
+        fi
+
+        # Expand bare suffixes to full refs; pass through anything that already
+        # looks like a full ref (contains "/" or starts with the registry).
+        resolved=()
+        for e in "${entries[@]}"; do
+          if [[ "$e" == "$REGISTRY"/* ]] || [[ "$e" == */* ]]; then
+            resolved+=("$e")
+          else
+            resolved+=("${image_ref}:${e}")
+          fi
+        done
+
+        {
+          echo "tags<<__TAGS_EOF__"
+          printf '%s\n' "${resolved[@]}"
+          echo "__TAGS_EOF__"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "Resolved tags:"
+        printf '  %s\n' "${resolved[@]}"
+
+    - name: Set up QEMU
+      if: ${{ inputs.qemu == 'true' }}
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Harbor
+      if: ${{ inputs.push == 'true' }}
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: Build and push
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        target: ${{ inputs.target }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push }}
+        build-args: ${{ inputs.build-args }}
+        tags: ${{ steps.resolve.outputs.tags }}
+        cache-from: type=gha${{ inputs.cache-scope != '' && format(',scope={0}', inputs.cache-scope) || '' }}
+        cache-to: type=gha,mode=max${{ inputs.cache-scope != '' && format(',scope={0}', inputs.cache-scope) || '' }}
