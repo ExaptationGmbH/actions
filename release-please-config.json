@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "-",
+  "changelog-sections": [
+    { "type": "feat",     "section": "Features" },
+    { "type": "fix",      "section": "Bug Fixes" },
+    { "type": "perf",     "section": "Performance" },
+    { "type": "revert",   "section": "Reverts" },
+    { "type": "refactor", "section": "Refactoring",            "hidden": false },
+    { "type": "docs",     "section": "Documentation",          "hidden": false },
+    { "type": "build",    "section": "Build System",           "hidden": false },
+    { "type": "ci",       "section": "Continuous Integration", "hidden": false },
+    { "type": "chore",    "hidden": true },
+    { "type": "test",     "hidden": true },
+    { "type": "style",    "hidden": true }
+  ],
+  "packages": {
+    "build-harbor-image": {
+      "release-type": "simple",
+      "component": "build-harbor-image",
+      "package-name": "build-harbor-image",
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "1.0.0"
+    }
+  }
+}
