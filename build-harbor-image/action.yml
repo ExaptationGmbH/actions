@@ -14,10 +14,10 @@ inputs:
   registry:
     description: Harbor registry hostname (e.g. harbor.example.com).
     required: true
-  username:
+  HARBOR_NAME:
     description: Harbor robot/user name (pass a secret or var).
     required: true
-  password:
+  HARBOR_KEY:
     description: Harbor password/token (pass a secret).
     required: true
 
@@ -174,8 +174,8 @@ runs:
       uses: docker/login-action@v3
       with:
         registry: ${{ inputs.registry }}
-        username: ${{ inputs.username }}
-        password: ${{ inputs.password }}
+        username: ${{ inputs.HARBOR_NAME }}
+        password: ${{ inputs.HARBOR_KEY }}
 
     - name: Build and push
       id: build

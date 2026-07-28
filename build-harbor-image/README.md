@@ -27,8 +27,8 @@ resolves its own version string.
 - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
   with:
     registry: ${{ vars.HARBOR_REGISTRY }}          # required — e.g. harbor.example.com
-    username: ${{ secrets.HARBOR_USERNAME }}
-    password: ${{ secrets.HARBOR_PASSWORD }}
+    HARBOR_NAME: ${{ secrets.HARBOR_NAME }}
+    HARBOR_KEY: ${{ secrets.HARBOR_KEY }}
     image: myproject/myimage
     version: ${{ steps.version.outputs.VERSION }}   # e.g. 1.2.3 → pushes :1.2.3 and :latest
 ```
@@ -42,8 +42,8 @@ for `linux/amd64` with GHA layer caching, and pushes
 | Input | Required | Default | Notes |
 |-------|----------|---------|-------|
 | `registry` | **yes** | — | Harbor hostname, e.g. `harbor.example.com`. No default — pass it explicitly (e.g. `${{ vars.HARBOR_REGISTRY }}`). |
-| `username` | **yes** | — | Harbor robot/user. Pass a secret or var. |
-| `password` | **yes** | — | Harbor token. Pass a secret. |
+| `HARBOR_NAME` | **yes** | — | Harbor robot/user name. Pass a secret or var (e.g. `${{ secrets.HARBOR_NAME }}`). |
+| `HARBOR_KEY` | **yes** | — | Harbor password/token. Pass a secret (e.g. `${{ secrets.HARBOR_KEY }}`). |
 | `image` | **yes** | — | Repo path **without** registry, e.g. `myproject/myimage`. |
 | `tags` | no | `""` | Newline/comma list. Bare suffixes (`1.2.3`) are expanded to full refs; entries containing `/` are passed through unchanged (feed `docker/metadata-action` output here). Wins over `version`. |
 | `version` | no | `""` | Convenience: pushes `<version>` (+ `latest`) when `tags` is empty. Strip leading `v` yourself if unwanted. |
@@ -74,8 +74,8 @@ for `linux/amd64` with GHA layer caching, and pushes
 - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
   with:
     registry: ${{ vars.HARBOR_REGISTRY }}
-    username: ${{ secrets.HARBOR_USERNAME }}
-    password: ${{ secrets.HARBOR_PASSWORD }}
+    HARBOR_NAME: ${{ secrets.HARBOR_NAME }}
+    HARBOR_KEY: ${{ secrets.HARBOR_KEY }}
     image: myproject/myimage
     version: ${{ steps.version.outputs.VERSION }}
     build-args: VERSION=${{ steps.version.outputs.VERSION }}
@@ -93,8 +93,8 @@ steps:
   - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
     with:
       registry: ${{ vars.HARBOR_REGISTRY }}
-      username: ${{ secrets.HARBOR_USERNAME }}
-      password: ${{ secrets.HARBOR_PASSWORD }}
+      HARBOR_NAME: ${{ secrets.HARBOR_NAME }}
+      HARBOR_KEY: ${{ secrets.HARBOR_KEY }}
       image: myproject/${{ matrix.app }}
       tags: ${{ steps.ref.outputs.tag }}          # keep the v-prefix if a downstream tool needs it
       cache-scope: ${{ matrix.app }}
@@ -109,8 +109,8 @@ steps:
 - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
   with:
     registry: ${{ vars.HARBOR_REGISTRY }}
-    username: ${{ secrets.HARBOR_USERNAME }}
-    password: ${{ secrets.HARBOR_PASSWORD }}
+    HARBOR_NAME: ${{ secrets.HARBOR_NAME }}
+    HARBOR_KEY: ${{ secrets.HARBOR_KEY }}
     image: myproject/myimage
     version: ${{ steps.release.outputs.tag_name }}
     platforms: linux/amd64,linux/arm64
@@ -132,8 +132,8 @@ steps:
 - uses: ExaptationGmbH/actions/build-harbor-image@build-harbor-image-v0
   with:
     registry: ${{ vars.HARBOR_REGISTRY }}
-    username: ${{ secrets.HARBOR_USERNAME }}
-    password: ${{ secrets.HARBOR_PASSWORD }}
+    HARBOR_NAME: ${{ secrets.HARBOR_NAME }}
+    HARBOR_KEY: ${{ secrets.HARBOR_KEY }}
     image: myproject/myimage
     tags: ${{ steps.meta.outputs.tags }}          # full refs passed through
     push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
@@ -150,6 +150,6 @@ action passes full refs through untouched.
 
 Replace the `setup-buildx` + `login` + `build-push` block in a repo's workflow
 with one `uses:` step. Keep your existing checkout, version-resolution, and
-trigger config. Credential input names are uniform (`username` / `password`)
-regardless of what the repo calls its secrets — just wire the repo's secret to
-the input.
+trigger config. Credential input names are uniform (`HARBOR_NAME` /
+`HARBOR_KEY`) regardless of what the repo calls its secrets — just wire the
+repo's secret to the input.
